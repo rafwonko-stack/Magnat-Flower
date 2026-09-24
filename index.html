@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Magnat Flower — склад, продажи, закупки, расходы и отчёты">
+  <title>Magnat Flower — управление торговлей</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Magnat Flower">
+      <span class="brand-mark">✿</span><span>MAGNAT<small>FLOWER / УПРАВЛЕНИЕ ТОРГОВЛЕЙ</small></span>
+    </a>
+    <span class="workspace-tag">Локальная база</span>
+  </header>
+
+  <main>
+    <section class="heading">
+      <div><div class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</div><h1>Магазин под контролем</h1><p>Склад, букеты, расходы и результаты.</p></div>
+      <button class="primary" data-action="sale">＋ Новая продажа</button>
+    </section>
+
+    <section class="stats" id="stats"></section>
+    <div id="notice" aria-live="polite"></div>
+
+    <nav class="tabs" aria-label="Разделы">
+      <button class="active" data-tab="stock">▣ Склад</button>
+      <button data-tab="recipes">✿ Букеты</button>
+      <button data-tab="counterparties">♙ Контрагенты</button>
+      <button data-tab="expenses">₽ Расходы</button>
+      <button data-tab="history">▤ Операции</button>
+      <button data-tab="reports">▥ Отчёты</button>
+    </nav>
+
+    <section id="content"></section>
+    <footer><strong>Magnat Flower</strong><span>Кыргызский сом · Данные хранятся в этом браузере</span></footer>
+  </main>
+
+  <dialog id="modal"><div id="modal-content"></div></dialog>
+  <script src="app.js"></script>
+</body>
+</html>
