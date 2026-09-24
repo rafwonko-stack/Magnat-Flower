@@ -8,11 +8,29 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <section class="auth-page" id="auth-page" hidden>
+    <div class="auth-card">
+      <div class="auth-logo">✿</div>
+      <div class="eyebrow">MAGNAT FLOWER</div>
+      <h1 id="auth-title">Вход в систему</h1>
+      <p id="auth-description">Войдите, чтобы открыть общую базу магазина.</p>
+      <form id="auth-form">
+        <label>Email<input name="email" type="email" autocomplete="email" required></label>
+        <label>Пароль<input name="password" type="password" autocomplete="current-password" minlength="8" required></label>
+        <p class="form-error" id="auth-error" aria-live="polite"></p>
+        <button class="primary" id="auth-submit">Войти</button>
+      </form>
+      <button class="text-button" id="auth-toggle" type="button">Создать аккаунт</button>
+      <p class="setup-message" id="setup-message" hidden></p>
+    </div>
+  </section>
+
+  <div id="app-shell" hidden>
   <header class="topbar">
     <a class="brand" href="#" aria-label="Magnat Flower">
       <span class="brand-mark">✿</span><span>MAGNAT<small>FLOWER / УПРАВЛЕНИЕ ТОРГОВЛЕЙ</small></span>
     </a>
-    <span class="workspace-tag">Локальная база</span>
+    <div class="account-bar"><span class="sync-dot" id="sync-dot"></span><span id="account-email"></span><button id="logout" type="button">Выйти</button></div>
   </header>
 
   <main>
@@ -38,6 +56,7 @@
   </main>
 
   <dialog id="modal"><div id="modal-content"></div></dialog>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

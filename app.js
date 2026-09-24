@@ -1,4 +1,9 @@
 const STORAGE_KEY='magnat-flower-html-v1';
+// Вставьте значения из Supabase: Project Settings → API.
+const SUPABASE_URL='https://fjiuqgkwaaqkauyjbdkd.supabase.co';
+const SUPABASE_ANON_KEY='sb_publishable_sQwt6XiafcbTcbmpocLM_Q_YdvKNK8y';
+const CLOUD_READY=/^https:\/\/[^/]+\.supabase\.co$/.test(SUPABASE_URL)&&!SUPABASE_ANON_KEY.startsWith('PASTE_');
+const SESSION_KEY='magnat-flower-supabase-session';
 const productCategories=['Цветы','Зелень','Упаковка','Аксессуары','Мишки'];
 const baseExpenseCategories=['Зарплата','Мусор','Электроэнергия','Аренда','Налог','Wi-Fi','Услуги','Доставка','Коммунальные услуги','Другое'];
 const kindLabels={sale:'Продажа',receipt:'Поступление',writeoff:'Списание',refund:'Возврат',cancel:'Отмена',expense:'Расход',inventory:'Инвентаризация','edit-product':'Изменение товара','edit-recipe':'Изменение букета'};
@@ -12,9 +17,10 @@ const dayKey=value=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bishkek',yea
 const today=()=>dayKey(Date.now());
 const label=p=>p.name+(p.sizeCm?` · ${p.sizeCm} см`:'');
 const emptyState=()=>({products:[],recipes:[],counterparties:[],documents:[],expenseCategories:[...baseExpenseCategories]});
-function load(){try{const data=JSON.parse(localStorage.getItem(STORAGE_KEY));return data&&Array.isArray(data.products)?{...emptyState(),...data}:emptyState()}catch{return emptyState()}}
-let state=load(),activeTab='stock';
-function save(message='Сохранено. Данные магазина обновлены.'){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));render();notice(message)}
+function load(key=STORAGE_KEY){try{const data=JSON.parse(localStorage.getItem(key));return data&&Array.isArray(data.products)?{...emptyState(),...data}:emptyState()}catch{return emptyState()}}
+let state=load(),activeTab='stock',session=null,cloudRevision=0,cloudDirty=false,cloudSaving=false,authMode='login';
+const cacheKey=()=>session?.user?.id?`${STORAGE_KEY}:${session.user.id}`:STORAGE_KEY;
+function save(message='Сохранено. Данные магазина обновлены.'){localStorage.setItem(cacheKey(),JSON.stringify(state));render();notice(message);queueCloudSave()}
 function notice(message,error=false){$('#notice').innerHTML=`<div class="${error?'alert':'notice'}"><span>${esc(message)}</span><button data-dismiss>×</button></div>`;setTimeout(()=>{if($('#notice').textContent.includes(message))$('#notice').innerHTML=''},4500)}
 function product(id){return state.products.find(item=>item.id===id)}
 function recipe(id){return state.recipes.find(item=>item.id===id)}
@@ -75,7 +81,7 @@ function uniqueLines(form){const lines=[...form.querySelectorAll('[data-line]')]
 document.addEventListener('click',event=>{const b=event.target.closest('button');if(!b)return;if(b.dataset.dismiss!==undefined)$('#notice').innerHTML='';if(b.dataset.close!==undefined)closeModal();if(b.dataset.tab){activeTab=b.dataset.tab;render()}if(b.dataset.action){({product:()=>openProduct(),recipe:()=>openRecipe(),sale:()=>openTransaction('sale'),receipt:()=>openTransaction('receipt'),writeoff:()=>openTransaction('writeoff'),expense:openExpense,inventory:openInventory}[b.dataset.action]||(()=>{}))()}if(b.dataset.editProduct)openProduct(b.dataset.editProduct);if(b.dataset.editRecipe)openRecipe(b.dataset.editRecipe);if(b.dataset.addLine){$('#lines').insertAdjacentHTML('beforeend',lineHtml(b.dataset.addLine,$$('#lines [data-line]')?.length||0));updateTransactionTotal()}if(b.dataset.removeLine){const lines=b.closest('#lines');if(lines.children.length>1)b.closest('[data-line]').remove();updateTransactionTotal()}if(b.dataset.reverse)reverseDocument(b.dataset.reverse);if(b.dataset.deleteCounterparty){if(confirm('Удалить контрагента из справочника? История операций сохранится.')){state.counterparties=state.counterparties.filter(c=>c.id!==b.dataset.deleteCounterparty);save('Контрагент удалён.')}}if(b.dataset.period){const from=$('#report-from'),to=$('#report-to'),now=today();if(b.dataset.period==='today')from.value=to.value=now;if(b.dataset.period==='month'){from.value=now.slice(0,7)+'-01';to.value=now}if(b.dataset.period==='all'){from.value='';to.value=''}updateReport(from.value,to.value)}});
 document.addEventListener('input',event=>{if(event.target.closest('#transaction-form'))updateTransactionTotal();if(event.target.id==='report-from'||event.target.id==='report-to')updateReport($('#report-from').value,$('#report-to').value)});
 document.addEventListener('change',event=>{if(event.target.matches('#product-form [name=category]'))$('#size-field').hidden=event.target.value!=='Мишки';if(event.target.matches('#transaction-form[data-kind=receipt] [name=item]')){const row=event.target.closest('[data-line]'),p=product(event.target.value);row.querySelector('[name=cost]').value=p?p.purchasePrice/100:''}});
-document.addEventListener('submit',event=>{event.preventDefault();try{if(event.target.id==='product-form')submitProduct(event.target);if(event.target.id==='recipe-form')submitRecipe(event.target);if(event.target.id==='transaction-form')submitTransaction(event.target);if(event.target.id==='expense-form')submitExpense(event.target);if(event.target.id==='inventory-form')submitInventory(event.target);if(event.target.id==='counterparty-form')submitCounterparty(event.target)}catch(error){notice(error.message||'Проверьте введённые данные.',true)}});
+document.addEventListener('submit',event=>{event.preventDefault();try{if(event.target.id==='auth-form'){void submitAuth(event.target);return}if(event.target.id==='product-form')submitProduct(event.target);if(event.target.id==='recipe-form')submitRecipe(event.target);if(event.target.id==='transaction-form')submitTransaction(event.target);if(event.target.id==='expense-form')submitExpense(event.target);if(event.target.id==='inventory-form')submitInventory(event.target);if(event.target.id==='counterparty-form')submitCounterparty(event.target)}catch(error){notice(error.message||'Проверьте введённые данные.',true)}});
 function $$(selector){return document.querySelectorAll(selector)}
 function submitProduct(form){const data=new FormData(form),category=data.get('category'),size=category==='Мишки'?Number(data.get('size')):null;if(category==='Мишки'&&(!Number.isInteger(size)||size<1))throw Error('Укажите размер мишки.');const current=product(form.dataset.id),item={id:current?.id||uid(),name:String(data.get('name')).trim(),category,sizeCm:size,stock:current?.stock||0,cost:current?.cost||0,purchasePrice:cents(data.get('purchase')),price:cents(data.get('price')),minimum:Number(data.get('minimum'))};if(!item.name||item.price<=0)throw Error('Укажите название и розничную цену.');if(current){Object.assign(current,item);addDocument({kind:'edit-product',summary:`Товар изменён: ${label(item)}`,note:'Карточка товара обновлена'})}else state.products.push(item);closeModal();save(current?'Карточка товара изменена.':'Товар добавлен.')}
 function submitRecipe(form){const data=new FormData(form),lines=uniqueLines(form),current=recipe(form.dataset.id),item={id:current?.id||uid(),name:String(data.get('name')).trim(),price:cents(data.get('price')),decorationFee:cents(data.get('decoration')),parts:lines.map(x=>({productId:x.id,quantity:x.quantity}))};if(!item.name||item.price<=0)throw Error('Укажите название и цену букета.');if(current){Object.assign(current,item);addDocument({kind:'edit-recipe',summary:`Букет изменён: ${item.name}`,note:'Карточка букета обновлена'})}else state.recipes.push(item);closeModal();save(current?'Букет изменён.':'Букет создан.')}
@@ -88,4 +94,67 @@ function submitCounterparty(form){const data=new FormData(form),name=String(data
 function reverseDocument(id){const original=state.documents.find(d=>d.id===id);if(!original||original.reversedBy)return;if(!confirm(original.kind==='sale'?'Оформить полный возврат продажи?':'Отменить эту операцию?'))return;if(original.stockBefore){for(const snap of original.stockBefore){const p=product(snap.id);if(p){p.stock=snap.stock;p.cost=snap.cost;p.purchasePrice=snap.purchasePrice}}}const reverseId=uid();original.reversedBy=reverseId;state.documents.unshift({id:reverseId,created:Date.now(),kind:original.kind==='sale'?'refund':'cancel',summary:`${original.kind==='sale'?'Полный возврат':'Отмена'}: ${original.summary}`,amount:-original.amount,note:'Обратная операция',counterpartyName:original.counterpartyName,reversedBy:null,reverseOf:original.id,revenue:-(original.revenue||0),cost:-(original.cost||0),loss:-(original.loss||0),expenses:-(original.expenses||0),purchases:-(original.purchases||0),decoration:-(original.decoration||0)});save(original.kind==='sale'?'Возврат оформлен.':'Операция отменена.')}
 
 $('#modal').addEventListener('click',event=>{if(event.target===$('#modal'))closeModal()});
-render();
+
+function setSyncStatus(status,title){const dot=$('#sync-dot');if(!dot)return;dot.className=`sync-dot ${status}`;dot.title=title||''}
+function authHeaders(token=session?.access_token){return{'apikey':SUPABASE_ANON_KEY,...(token?{'Authorization':`Bearer ${token}`}:{ }),'Content-Type':'application/json'}}
+async function cloudFetch(path,options={},useSession=true){
+  const response=await fetch(`${SUPABASE_URL}${path}`,{...options,headers:{...authHeaders(useSession?session?.access_token:null),...(options.headers||{})}});
+  if(response.status===401&&useSession&&session?.refresh_token){await refreshSession();return cloudFetch(path,options,true)}
+  const text=await response.text();let data=null;try{data=text?JSON.parse(text):null}catch{data=text}
+  if(!response.ok){const error=new Error(data?.message||data?.error_description||data?.hint||data?.details||data?.error||`Ошибка сервера: ${response.status}`);error.code=data?.code;throw error}
+  return data;
+}
+function storeSession(value){session=value;value?localStorage.setItem(SESSION_KEY,JSON.stringify(value)):localStorage.removeItem(SESSION_KEY)}
+async function refreshSession(){
+  const current=session;if(!current?.refresh_token)throw Error('Сеанс завершён. Войдите снова.');
+  const next=await cloudFetch('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:current.refresh_token})},false);storeSession(next);return next;
+}
+async function submitAuth(form){
+  const button=$('#auth-submit'),error=$('#auth-error'),data=new FormData(form);button.disabled=true;error.textContent='';
+  try{
+    const endpoint=authMode==='signup'?'/auth/v1/signup':'/auth/v1/token?grant_type=password';
+    const result=await cloudFetch(endpoint,{method:'POST',body:JSON.stringify({email:String(data.get('email')).trim(),password:String(data.get('password'))})},false);
+    if(!result.access_token){error.textContent='Аккаунт создан. Подтвердите email по ссылке из письма, затем войдите.';authMode='login';updateAuthMode();return}
+    storeSession(result);await enterApp();
+  }catch(e){error.textContent=e.message||'Не удалось выполнить вход.'}finally{button.disabled=false}
+}
+function updateAuthMode(){const signup=authMode==='signup';$('#auth-title').textContent=signup?'Создание аккаунта':'Вход в систему';$('#auth-description').textContent=signup?'Создайте защищённую облачную базу магазина.':'Войдите, чтобы открыть общую базу магазина.';$('#auth-submit').textContent=signup?'Создать аккаунт':'Войти';$('#auth-toggle').textContent=signup?'У меня уже есть аккаунт':'Создать аккаунт'}
+async function enterApp(){
+  $('#auth-page').hidden=true;$('#app-shell').hidden=false;$('#account-email').textContent=session.user?.email||'Аккаунт';setSyncStatus('','Загрузка облачной базы…');
+  try{await loadCloudState();setSyncStatus('online','Данные синхронизированы')}catch(e){state=load(cacheKey());render();setSyncStatus('error','Нет связи с облаком');notice(`Облачная база недоступна: ${e.message}. Открыта локальная копия.`,true)}
+}
+async function loadCloudState(){
+  const rows=await cloudFetch(`/rest/v1/store_state?select=data,revision&owner_id=eq.${encodeURIComponent(session.user.id)}`);
+  if(rows.length){state={...emptyState(),...rows[0].data};cloudRevision=Number(rows[0].revision)||0}
+  else{
+    const initial=load(STORAGE_KEY);const created=await cloudFetch('/rest/v1/store_state',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({owner_id:session.user.id,data:initial,revision:0})});state={...emptyState(),...(created[0]?.data||initial)};cloudRevision=Number(created[0]?.revision)||0;
+  }
+  localStorage.setItem(cacheKey(),JSON.stringify(state));cloudDirty=false;render();
+}
+let saveChain=Promise.resolve();
+function queueCloudSave(){if(!CLOUD_READY||!session)return;cloudDirty=true;saveChain=saveChain.then(syncCloudState).catch(()=>{})}
+async function syncCloudState(){
+  if(!cloudDirty||cloudSaving||!navigator.onLine)return;cloudSaving=true;cloudDirty=false;setSyncStatus('','Синхронизация…');const snapshot=structuredClone(state);
+  try{
+    const next=await cloudFetch('/rest/v1/rpc/save_store_state',{method:'POST',body:JSON.stringify({p_data:snapshot,p_expected_revision:cloudRevision})});cloudRevision=Number(next);localStorage.setItem(cacheKey(),JSON.stringify(snapshot));setSyncStatus('online','Данные синхронизированы');channel?.postMessage({revision:cloudRevision,state:snapshot});
+  }catch(e){
+    cloudDirty=true;setSyncStatus('error','Ошибка синхронизации');
+    if(e.code==='40001'||String(e.message).includes('SYNC_CONFLICT')){localStorage.setItem(`${cacheKey()}:conflict:${Date.now()}`,JSON.stringify(snapshot));await loadCloudState();notice('Другой сеанс уже изменил базу. Загружена свежая версия; конфликтующая копия сохранена в браузере.',true)}else notice(`Не удалось синхронизировать: ${e.message}`,true);
+  }finally{cloudSaving=false}
+}
+async function pollCloud(){if(!session||cloudDirty||cloudSaving||document.hidden||!navigator.onLine)return;try{const rows=await cloudFetch(`/rest/v1/store_state?select=data,revision&owner_id=eq.${encodeURIComponent(session.user.id)}`);if(rows[0]&&Number(rows[0].revision)>cloudRevision){state={...emptyState(),...rows[0].data};cloudRevision=Number(rows[0].revision);localStorage.setItem(cacheKey(),JSON.stringify(state));render();notice('Получены изменения из другого устройства.')}setSyncStatus('online','Данные синхронизированы')}catch{setSyncStatus('error','Нет связи с облаком')}}
+const channel='BroadcastChannel'in window?new BroadcastChannel('magnat-flower-sync'):null;
+channel?.addEventListener('message',event=>{if(event.data?.revision>cloudRevision&&!cloudDirty){cloudRevision=event.data.revision;state={...emptyState(),...event.data.state};localStorage.setItem(cacheKey(),JSON.stringify(state));render()}});
+$('#auth-toggle').addEventListener('click',()=>{authMode=authMode==='login'?'signup':'login';$('#auth-error').textContent='';updateAuthMode()});
+$('#logout').addEventListener('click',async()=>{try{await cloudFetch('/auth/v1/logout',{method:'POST'})}catch{}storeSession(null);state=emptyState();$('#app-shell').hidden=true;$('#auth-page').hidden=false;$('#auth-form').reset();updateAuthMode()});
+window.addEventListener('online',()=>{setSyncStatus('','Восстановление связи…');queueCloudSave();void pollCloud()});
+window.addEventListener('offline',()=>setSyncStatus('error','Нет интернета: изменения временно сохранены в браузере'));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void pollCloud()});
+setInterval(()=>{if(cloudDirty)queueCloudSave();else void pollCloud()},15000);
+async function startApp(){
+  if(!CLOUD_READY){$('#auth-page').hidden=false;$('#setup-message').hidden=false;$('#setup-message').textContent='Облачная база ещё не подключена. Вставьте Project URL и anon key в начало файла app.js.';$('#auth-form').querySelectorAll('input,button').forEach(element=>element.disabled=true);$('#auth-toggle').disabled=true;return}
+  try{session=JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{session=null}
+  if(session?.expires_at&&session.expires_at*1000<Date.now()+60000){try{await refreshSession()}catch{storeSession(null)}}
+  if(session?.access_token)await enterApp();else{$('#auth-page').hidden=false;updateAuthMode()}
+}
+void startApp();
